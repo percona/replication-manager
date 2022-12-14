@@ -128,7 +128,7 @@ fi
 
 # retrieve the global status and set variables
 get_status_and_variables() {
-    eval `$MYSQL -N -e 'show global status;show global variables;' 2> /tmp/mysql_error | tr '\t' '=' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\([^=]*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
+    eval `$MYSQL -N -e 'show global status;show global variables;' 2> /tmp/mysql_error | tr '\t' '=' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g'     |grep -i -v wsrep_monitor_status| sed -e 's/^\([^=]*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
 
     if [ "$(grep -c ERROR /tmp/mysql_error)" -gt 0 ]; then
         cat /tmp/mysql_error
