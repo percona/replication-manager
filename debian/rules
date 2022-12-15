@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_builddeb:
+	dh_builddeb -- -Zgzip
+override_dh_auto_install:
+	install -m 0755 replication_manager.sh /usr/bin
