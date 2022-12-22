@@ -13,6 +13,8 @@ Vendor:         Percona, LLC
 BuildArch:      x86_64
 Source0:        %{name}-%{version}.tar.gz
 
+Requires:       percona-xtradb-cluster-client
+
 %description
 Replication manager for PXC and MariaDB
 The typical use case would be to manager a master-master replication link between two distincts PXC clusters but the tools supports more complex topology.

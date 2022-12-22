@@ -7,5 +7,6 @@ Standards-Version: 1.0
 
 Package: percona-replication-manager
 Architecture: any
+Depends: percona-xtradb-cluster-client
 Description: Replication manager for PXC and MariaDB
  The typical use case would be to manager a master-master replication link between two distincts PXC clusters but the tools supports more complex topology.
