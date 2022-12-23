@@ -106,8 +106,8 @@ get_sources(){
     echo "REVISION=${REVISION}" >> ${WORKDIR}/replication-manager.properties
     mkdir debian
     cd debian/
-    wget https://raw.githubusercontent.com/surbhat1595/replication-manager/debian/control
-    wget https://raw.githubusercontent.com/surbhat1595/replication-manager/debian/rules
+    wget https://raw.githubusercontent.com/percona/replication-manager/debian/control
+    wget https://raw.githubusercontent.com/percona/replication-manager/debian/rules
     echo 9 > compat
     echo "percona-replication-manager (${VERSION}-${RELEASE}) unstable; urgency=low" >> changelog
     echo "  * Initial Release." >> changelog
@@ -116,7 +116,7 @@ get_sources(){
     cd ../
     mkdir rpm
     cd rpm
-    wget https://raw.githubusercontent.com/surbhat1595/replication-manager/rpm/percona-replication-manager.spec
+    wget https://raw.githubusercontent.com/percona/replication-manager/rpm/percona-replication-manager.spec
     cd ${WORKDIR}
     #
     source replication-manager.properties
@@ -405,7 +405,7 @@ RPM_RELEASE=1
 DEB_RELEASE=1
 REVISION=0
 BRANCH="main"
-REPO="http://github.com/surbhat1595/replication-manager"
+REPO="http://github.com/percona/replication-manager"
 PRODUCT=percona-replication-manager
 DEBUG=0
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
