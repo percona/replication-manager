@@ -148,7 +148,7 @@ get_system(){
 
 switch_to_vault_repo() {
     sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
-    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+    sed -i 's|#\s*baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 }
 
 install_deps() {
@@ -165,7 +165,7 @@ install_deps() {
     CURPLACE=$(pwd)
 
     if [ "x$OS" = "xrpm" ]; then
-        if [ x"$RHEL" = x8 ]; then
+        if [ x"$RHEL" = x8 -o "x${RHEL}" = "x7" ]; then
             switch_to_vault_repo
         fi
         yum -y install wget
