@@ -10,7 +10,6 @@ Group:          Applications/Databases
 URL:            https://github.com/percona/replication-manager
 Packager:       Percona Development Team <https://jira.percona.com>
 Vendor:         Percona, LLC
-BuildArch:      x86_64
 Source0:        %{name}-%{version}.tar.gz
 
 Requires:       percona-xtradb-cluster-client
