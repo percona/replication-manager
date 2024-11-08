@@ -163,13 +163,13 @@ get_slave_status() {
         if [ "$cnt" -eq 1 ]; then
             eval `$MYSQL -e "show replica '${wsrep_cluster_name}-${remoteCluster}' status\G" 2> /tmp/mysql_error | grep -v Last | grep -v '\*\*\*\*' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\s*//g' -e 's/: /=/g' -e 's/\(.*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
         else
-            unset Master_Host
+            unset Source_Host
         fi
     else
         if [ "$cnt" -eq 1 ]; then
             eval `$MYSQL -e "show replica status for channel '${wsrep_cluster_name}-${remoteCluster}'\G" 2> /tmp/mysql_error | grep -v Last | grep -v '\*\*\*\*' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\s*//g' -e 's/: /=/g' -e 's/\(.*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
         else
-            unset Master_Host
+            unset Source_Host
         fi    
     fi
     
@@ -234,7 +234,7 @@ try_masters() {
         fi
         sleep 10  # Give some time for replication to settle
         get_slave_status $remoteCluster
-        stateOk=$(echo $Slave_IO_State | grep -ci connect) # anything with connect in Slave_IO_State is bad
+        stateOk=$(echo $Replica_IO_Running | grep -ci connect) # anything with connect in Replica_IO_Running is bad
         if [[ $Replica_IO_Running == "Yes" && $Replica_SQL_Running == "Yes" && $stateOk -eq 0 ]]; then
             masterOk=1
             break
@@ -304,7 +304,7 @@ setup_replication(){
         fi
     else
         # this node is not the best candidate for slave, this will reset status 'Failed' when there is no slave
-        if [ "a$Master_Host" == "a" ]; then   # sanity check
+        if [ "a$Source_Host" == "a" ]; then   # sanity check
             $MYSQL -e "
             update percona.replication 
              set isReplica='No', localIndex=$wsrep_local_index, lastHeartbeat=now() 
@@ -354,7 +354,7 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
 
         get_slave_status $remoteCluster
         
-        if [ "a$Master_Host" == "a" ]; then 
+        if [ "a$Source_Host" == "a" ]; then 
             # This node is not currently a slave
             
             if [ "a$myState" == "a" ]; then
@@ -493,7 +493,7 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
 else
     # cluster node is not sane for this node
 
-    if [ "a$Master_Host" != "a" ]; then 
+    if [ "a$Source_Host" != "a" ]; then 
         # This node is currently a replica but not in the primary group, bailing out
         bail_out No
         send_email "Node $wsrep_node_name is not longer part of the cluster $wsrep_cluster_name, stopping replication" "Failed replica"
