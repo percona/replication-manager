@@ -1,8 +1,8 @@
 # Replication manager for PXC and MariaDB
 
-This tool helps manage asynchronous replication between PXC or MariaDB clusters. If you are looking to manage replication of a standalone slave to a PXC cluster, look below at the slave manager script.  The typical use case would be to manager a master-master replication link between two distincts PXC clusters but the tools supports more complex topology.  
+This tool helps manage asynchronous replication between PXC or MariaDB clusters. The typical use case would be to manager a master-master replication link between two distincts PXC clusters but the tools supports more complex topology.  
 
-In each cluster, any node can be the slave to another cluster and that slave can point to any of the remote nodes for its master.  The existing galera communication layer is used within a cluster for quorum and to exchange information between the nodes.  Messages are simply written to a shared table in the percona schema.  This allows a node to determine if another node in the cluster is already acting as a slave and if it is reporting correctly.  If no node in the cluster is a declaring itself a slave for a given replication link, the reporting node that has the lowest local index will propose itself as a slave and if not contested, will then start slaving.  When a given cluster needs to be slave for more than one remote cluster, it is possible to distribute the slaves across the nodes, this is the default behavior. If you don't what to distribute the slaves, you need to set the variable "DISTRIBUTE_SLAVE" to 0 in the script header. If the node that is the slave loses connection with its master, it will try to reconnect to the other potential masters, if more than one master is provided.  If it fails, it will report "Failed" so that another node in the cluster can try to become a slave.  The "Failed" state will clear up after three minutes. 
+In each cluster, any node can be the replica to another cluster and that replica can point to any of the remote nodes for its master.  The existing galera communication layer is used within a cluster for quorum and to exchange information between the nodes.  Messages are simply written to a shared table in the percona schema.  This allows a node to determine if another node in the cluster is already acting as a replica and if it is reporting correctly.  If no node in the cluster is a declaring itself a replica for a given replication link, the reporting node that has the lowest local index will propose itself as a replica and if not contested, will then start slaving.  When a given cluster needs to be replica for more than one remote cluster, it is possible to distribute the replicas across the nodes, this is the default behavior. If you don't what to distribute the replicas, you need to set the variable "DISTRIBUTE_REPLICA" to 0 in the script header. If the node that is the replica loses connection with its master, it will try to reconnect to the other potential masters, if more than one master is provided.  If it fails, it will report "Failed" so that another node in the cluster can try to become a replica.  The "Failed" state will clear up after three minutes. 
 
 **NOTE**: Such setup can easily cause replication conflicts, make sure your schema and queries are resilient.  Compound primary keys are your friends.
 
@@ -14,7 +14,7 @@ In the following steps, we'll assume the goal is to deploy and master-master rep
 
     DC2 <=> DC1 <=> DC3
 
-DC1 replicates (is a slave) of DC2 and DC3.  DC2 and DC3 are slaves of DC1.  Let's start by the configuration of DC1.  The minimal MySQL configuration file common to all three DC1 nodes will like the ones proposed in the next sections.
+DC1 replicates (is a replica) of DC2 and DC3.  DC2 and DC3 are replicas of DC1.  Let's start by the configuration of DC1.  The minimal MySQL configuration file common to all three DC1 nodes will like the ones proposed in the next sections.
 
 ### Minimal configuration when using PXC
 
@@ -28,13 +28,13 @@ DC1 replicates (is a slave) of DC2 and DC3.  DC2 and DC3 are slaves of DC1.  Let
     binlog_format=ROW
     server-id=1
     log-bin=mysql-bin
-    log_slave_updates
+    log_replica_updates
     expire_logs_days=7
     gtid_mode = ON
     enforce_gtid_consistency=ON
     master_info_repository = TABLE
     relay_log_info_repository = TABLE
-    skip-slave-start
+    skip-replica-start
         
     # Galera configuration
     wsrep_provider=/usr/lib/galera3/libgalera_smm.so
@@ -46,7 +46,7 @@ DC1 replicates (is a slave) of DC2 and DC3.  DC2 and DC3 are slaves of DC1.  Let
     wsrep_sst_method=xtrabackup-v2
     wsrep_sst_auth="root:root"
 
-All nodes will have the same server-id value and the repositories are set to "TABLE" because the multi-source replication syntax will be used since a given node could end up being the slave of more than one remote cluster.  
+All nodes will have the same server-id value and the repositories are set to "TABLE" because the multi-source replication syntax will be used since a given node could end up being the replica of more than one remote cluster.  
 
 ### Minimal configuration when using MariaDB 10.1.4+
 
@@ -60,10 +60,10 @@ All nodes will have the same server-id value and the repositories are set to "TA
     binlog_format=ROW
     server-id=1
     log-bin=mysql-bin
-    log_slave_updates
+    log_replica_updates
     expire_logs_days=7
     gtid_ignore_duplicates
-    skip-slave-start
+    skip-replica-start
         
     # Galera configuration
     wsrep_provider=/usr/lib/galera/libgalera_smm.so
@@ -264,7 +264,7 @@ Now, we have all the clusters linked in a master to master way.  You can try som
     # wget https://raw.githubusercontent.com/percona/replication-manager/refs/heads/main/percona-replication-manager_builder8.sh
     # chmod u+x replication_manager.sh
 
-When executed for the first time, the replication manager will detect the current replication links and insert rows in the *percona.replication* table.  In order to avoid problems, we'll start by the nodes that are already slaves.  On these nodes (DC1-1, DC2-1 and DC3-1), execute the script manually once (remember you need the mysql credentials in /home/\<user\>/.my.cnf or to set `--defaults-file <file path>`):
+When executed for the first time, the replication manager will detect the current replication links and insert rows in the *percona.replication* table.  In order to avoid problems, we'll start by the nodes that are already replicas.  On these nodes (DC1-1, DC2-1 and DC3-1), execute the script manually once (remember you need the mysql credentials in /home/\<user\>/.my.cnf or to set `--defaults-file <file path>`):
 
     # /usr/local/bin/replication_manager.sh [--defaults-file /etc/repmanager/repmanager.cnf]
     
@@ -312,29 +312,9 @@ The script outputs its trace (bash -x) to the file "/tmp/replication_manager.log
 
 [https://github.com/percona/replication-manager/issues](https://github.com/percona/replication-manager/issues)
 
-## Slave manager for PXC
+## Replica manager for PXC (Removed)
 
-This script is a simplified version intended to manage a single slave. In order to use it, you need to edit the script and adjust the masterCandidates and replCreds variables.  If the PXC nodes are 10.1.1.10, 10.1.1.11 and 10.1.1.12 and the replication is 'repluser' with a password set to 'replpass' then the variables should look like:
-
-    masterCandidates="10.1.1.10 10.1.1.11 10.1.1.12"
-    replCreds="master_user='repl', master_password='replpass'"
-
-The credentials to the local MySQL server should be in the ~/.my.cnf file of the user under which the cron job will be defined. The last step is to enable the cron job:
-
-    * * * * * /usr/local/bin/slave_manager.sh 
-
-which will run every minute.
-
-If you have issues, do:
-
-    touch /tmp/slave_manager.log 
-    chmod a+w /tmp/slave_manager.log
-
-and look at the bash trace file for anything suspicious. If you do maintenance on the slave and you don't want the script to mess around, do:
-
-    touch /tmp/slave_manager.off
-
-Once done, just remove the file to get the script back to normal.
+To implement a simple Replica (one single node connected to a PXC cluster), we suggest you to read and apply the [Asynchronous Connection Failover for Replicas](https://dev.mysql.com/doc/refman/8.4/en/replication-asynchronous-connection-failover-replica.html) method. The failover will automatically realized by the MySQL server without the need to implement a third party script.
 
 ## Compatibility with EOL PXC 5.7
 The tool comes in two versions:

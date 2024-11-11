@@ -156,7 +156,7 @@ fi
 FAILED_REPLICATION_TIMEOUT=179  # 3 times the cron interval minus 1s
 
 # set it to the cluster size if you want to distribute the slave, 0 otherwise
-DISTRIBUTE_SLAVE=3 
+DISTRIBUTE_REPLICA=3 
 
 MYSQL="`which mysql` ${DEFAULTS_FILE} --connect_timeout=10 -B"
 
@@ -237,7 +237,7 @@ find_best_slave_candidate() {
      where isReplica != 'Failed' 
        and connectionName = '${wsrep_cluster_name}-${1}'
        and unix_timestamp(lastHeartbeat) > unix_timestamp() - $FAILED_REPLICATION_TIMEOUT      
-     order by weight desc, localIndex+currentLinks*${DISTRIBUTE_SLAVE} 
+     order by weight desc, localIndex+currentLinks*${DISTRIBUTE_REPLICA} 
      limit 1;"
 }
 
