@@ -314,7 +314,7 @@ The script outputs its trace (bash -x) to the file "/tmp/replication_manager.log
 
 ## Single node Replica manager for PXC 
 
-To implement a simple Replica (one single node connected to a PXC cluster), we suggest you to read and apply the [Asynchronous Connection Failover for Replicas](https://dev.mysql.com/doc/refman/8.4/en/replication-asynchronous-connection-failover-replica.html) method. The failover will automatically realized by the MySQL server without the need to implement a third party script.
+To implement a simple Replica (one single node connected to a PXC cluster), we suggest you to read and apply the [Asynchronous Connection Failover for Replicas](https://dev.mysql.com/doc/refman/8.4/en/replication-asynchronous-connection-failover-replica.html) method. The failover will be automatically realized by the MySQL server without the need to implement a third party script.
 
 ## Compatibility with EOL PXC 5.7
 The tool comes in two versions:
