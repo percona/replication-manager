@@ -8,7 +8,7 @@ In each cluster, any node can be the slave to another cluster and that slave can
 
 ## Deployment 
 
-Because of the subtle relationship between PXC galera replication and GTID replication, deploying this script in production involves more steps than one could think of a simple solution managing replication.   This solution works only with GTID based replication.  Furthermore, the MariaDB  GTID implementation is different from the Oracle's one.  There are specific notes regarding MariaDB in the documentation.  Only MariaDB 10.1.4+ works with this script.  Within a PXC cluster, there must be only a single GTID sequence.  If you enabled GTID after the PXC cluster is up, you'll need to shutdown MySQL on all nodes except one and force SST at restart by removing the files in the datadir. 
+Because of the subtle relationship between PXC galera replication and GTID replication, deploying this script in production involves more steps than one could think of a simple solution managing replication.   This solution works only with GTID based replication.  Furthermore, the MariaDB  GTID implementation is different from the Oracle's one.  There are specific notes regarding MariaDB in the documentation.  Only MariaDB 10.1.4+ works with this script.  Within a PXC cluster, **there must be only a single GTID sequence**.  If you enabled GTID after the PXC cluster is up, you'll need to shutdown MySQL on all nodes except one and force SST at restart by removing the files in the datadir. 
 
 In the following steps, we'll assume the goal is to deploy and master-master replication links between three data-centers: DC1, DC2 and DC3.  In each DC, there are 3 PXC nodes forming distincts Galera clusters.  In DC1 the 3 nodes are DC1-1, DC1-2 and DC1-3.  The nodes in the other DCs are similarly labeled.  The goal is to have the following topology:
 
@@ -46,7 +46,7 @@ DC1 replicates (is a slave) of DC2 and DC3.  DC2 and DC3 are slaves of DC1.  Let
     wsrep_sst_method=xtrabackup-v2
     wsrep_sst_auth="root:root"
 
-All nodes will have the same server-id value and the repositories are set to "TABLE" because the multi-source replication syntax will be used since a given node could end up being the slave of more than one remote cluster.  We assume the user "root@localhost" exists with the password "root".  
+All nodes will have the same server-id value and the repositories are set to "TABLE" because the multi-source replication syntax will be used since a given node could end up being the slave of more than one remote cluster.  
 
 ### Minimal configuration when using MariaDB 10.1.4+
 
@@ -78,6 +78,28 @@ All nodes will have the same server-id value and the repositories are set to "TA
     wsrep_gtid_mode=ON
 
 We assume the user "root@localhost" exists with the password "root". The "server-id" and "wsres_gtid_domain_id" values must be the same within a cluster and distinct between clusters.
+
+However using __root__ user is not best practices. We invite you to create an ad hoc user who will manage the needed operations executed by the script.\
+IE:
+```
+drop user 'repmanager'@'localhost';
+Create user 'repmanager'@'localhost' identified by 'repmanage'; 
+GRANT REPLICATION_SLAVE_ADMIN,SUPER, REPLICATION CLIENT,RELOAD on *.* TO 'repmanager'@'localhost';
+GRANT ALL on percona.* TO 'repmanager'@'localhost';
+```
+Information about the user can be passed using the default configuration file located in the home user directory:\
+`~/.my.cnf`\
+ or you can specify the  defaults file to use with the parameter `--defaults-file <path to file>`
+ 
+File example:\
+`--defaults-file /etc/repmanager/repmanager.cnf`
+```
+[mysql]
+ port = 3306
+ socket = /var/lib/mysql/data/mysql.sock 
+ user=repmanager
+ password=repmanage
+```
 
 ## Configuration steps
 
@@ -113,6 +135,8 @@ You can start using the database and adding grants in DC1 but do not touch DC2 a
     
 At this we can complete the part of the configuration stored in the database.  First, let's create the tables the replication manager need.  Let's create them on DC1-1:
 
+**OLD Schema definition valid only up to PXC 5.7**\
+```
     create database if not exists percona;
     use percona;
     CREATE TABLE `replication` (
@@ -143,6 +167,43 @@ At this we can complete the part of the configuration stored in the database.  F
      `weight` int NOT NULL DEFAULT 0, 
      PRIMARY KEY (`cluster`,`nodename`)
     ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+```
+**New Schema definition (from PXC 8.0 and above)**
+```
+create database if not exists percona;
+use percona;
+drop table `replication`;
+CREATE TABLE `replication` (
+  `host` varchar(40) NOT NULL,
+  `weight` int(11) NOT NULL DEFAULT 0,
+  `localIndex` int(11) DEFAULT NULL,
+  `isReplica` enum('No','Yes','Proposed','Failed') DEFAULT 'No',
+  `lastUpdate` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `lastHeartbeat` timestamp NOT NULL DEFAULT '1971-01-01 00:00:00',
+  `connectionName` varchar(64) NOT NULL,
+  `currentSource`   varchar(64),  
+  PRIMARY KEY (`connectionName`,`host`),
+  KEY `idx_host` (`host`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+CREATE TABLE `cluster` (
+  `cluster` varchar(31) NOT NULL,
+  `masterCandidates` varchar(255) NOT NULL,
+  `replCreds` varchar(255) NOT NULL,
+  PRIMARY KEY (`cluster`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+CREATE TABLE `link` (
+  `clusterSlave` varchar(31) NOT NULL,
+  `clusterMaster` varchar(31) NOT NULL,
+  PRIMARY KEY (`clusterSlave`,`clusterMaster`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+CREATE TABLE `weight` (
+ `cluster` varchar(31) NOT NULL,
+ `nodename` varchar(255) NOT NULL,
+ `weight` int NOT NULL DEFAULT 0, 
+ PRIMARY KEY (`cluster`,`nodename`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+```
     
 The *replication* table will be written to by the tool, nothing needs to be inserted in that table.  The *cluster* table contains the details of each clusters.  In our case let's define our 3 clusters where the cluster names come from their respective *wsrep_cluster_name* variable values:
 
@@ -181,31 +242,31 @@ and:
 
 Now we can start configuring replication.  The first replication links have to be setup manually.  On DC2-1 do:
 
-    mysql> change master to master_host='WAN IP of DC1-1', master_user='repl', master_password='replpass', MASTER_AUTO_POSITION = 1 for channel 'DC2-DC1';
-    mysql> start slave for channel 'DC2-DC1';
+    mysql> change replication source to source_host='WAN IP of DC1-1', source_user='repl', source_password='replpass', source_AUTO_POSITION = 1 for channel 'DC2-DC1';
+    mysql> start replica for channel 'DC2-DC1';
     
 Similarly, on DC3-1 do:
 
-    mysql> change master to master_host='WAN IP of DC1-1', master_user='repl', master_password='replpass', MASTER_AUTO_POSITION = 1 for channel 'DC3-DC1';
-    mysql> start slave for channel 'DC3-DC1';
+    mysql> change replication source to source_host='WAN IP of DC1-1', source_user='repl', source_password='replpass', SOURCE_AUTO_POSITION = 1 for channel 'DC3-DC1';
+    mysql> start replica for channel 'DC3-DC1';
 
 For the other direction, we'll use DC1-1 for both:
 
-    mysql> change master to master_host='WAN IP of DC2-1', master_user='repl', master_password='replpass', MASTER_AUTO_POSITION = 1 for channel 'DC1-DC2';
-    mysql> start slave for channel 'DC1-DC2';
-    mysql> change master to master_host='WAN IP of DC3-1', master_user='repl', master_password='replpass', MASTER_AUTO_POSITION = 1 for channel 'DC1-DC3';
-    mysql> start slave for channel 'DC1-DC3';
+    mysql> change replication source to source_host='WAN IP of DC2-1', source_user='repl', source_password='replpass', SOURCE_AUTO_POSITION = 1 for channel 'DC1-DC2';
+    mysql> start replica for channel 'DC1-DC2';
+    mysql> change replication source to source_host='WAN IP of DC3-1', source_user='repl', source_password='replpass', SOURCE_AUTO_POSITION = 1 for channel 'DC1-DC3';
+    mysql> start replica for channel 'DC1-DC3';
 
 
 Now, we have all the clusters linked in a master to master way.  You can try some writes and look at the GTID_EXECUTED sequence on all nodes, it should be very similar with 3 UUID sequences, one per cluster.  It is time to pull in the *replication_manager.sh* script.  On each node, perform the following steps:
 
     # cd /usr/local/bin
-    # wget https://github.com/y-trudeau/Mysql-tools/raw/master/PXC/replication_manager.sh
+    # wget https://raw.githubusercontent.com/percona/replication-manager/refs/heads/main/percona-replication-manager_builder8.sh
     # chmod u+x replication_manager.sh
 
-When executed for the first time, the replication manager will detect the current replication links and insert rows in the *percona.replication* table.  In order to avoid problems, we'll start by the nodes that are already slaves.  On these nodes (DC1-1, DC2-1 and DC3-1), execute the script manually once (remember you need the mysql credentials in /root/.my.cnf):
+When executed for the first time, the replication manager will detect the current replication links and insert rows in the *percona.replication* table.  In order to avoid problems, we'll start by the nodes that are already slaves.  On these nodes (DC1-1, DC2-1 and DC3-1), execute the script manually once (remember you need the mysql credentials in /home/\<user\>/.my.cnf or to set `--defaults-file <file path>`):
 
-    # /usr/local/bin/replication_manager.sh
+    # /usr/local/bin/replication_manager.sh [--defaults-file /etc/repmanager/repmanager.cnf]
     
 The replication state should be unchanged and the *percona.replication* table should have the following rows:
 
@@ -274,3 +335,8 @@ and look at the bash trace file for anything suspicious. If you do maintenance o
     touch /tmp/slave_manager.off
 
 Once done, just remove the file to get the script back to normal.
+
+## Compatibility with EOL PXC 5.7
+The tool comes in two versions:
+- replication_manager5.sh. Which is the version supporting PXC 5.7 (unmantained/deprecated)
+- replication_manager.sh. which is the version supporting PXC 8.0 and above
