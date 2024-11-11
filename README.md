@@ -312,7 +312,7 @@ The script outputs its trace (bash -x) to the file "/tmp/replication_manager.log
 
 [https://github.com/percona/replication-manager/issues](https://github.com/percona/replication-manager/issues)
 
-## Replica manager for PXC (Removed)
+## Single node Replica manager for PXC 
 
 To implement a simple Replica (one single node connected to a PXC cluster), we suggest you to read and apply the [Asynchronous Connection Failover for Replicas](https://dev.mysql.com/doc/refman/8.4/en/replication-asynchronous-connection-failover-replica.html) method. The failover will automatically realized by the MySQL server without the need to implement a third party script.
 
