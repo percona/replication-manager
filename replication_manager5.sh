@@ -110,7 +110,7 @@ fi
 
 if [ -f /tmp/replication_manager.off ]; then
     echo "/tmp/replication_manager.off exists, exiting now"
-    exit
+    exit 1
 fi
 
 #Global variables default values
@@ -119,10 +119,13 @@ FAILED_REPLICATION_TIMEOUT=179  # 3 times the cron interval minus 1s
 # set it to the cluster size if you want to distribute the slave, 0 otherwise
 DISTRIBUTE_SLAVE=3 
 
+# IF we should send Email or not default Not
+SEND_EMAIL=0
+
 MYSQL="`which mysql` --connect_timeout=10 -B"
 
-# local override
-if [ -f "/usr/local/etc/replication_manager.cnf" ]; then
+# local override and check that the file is NOT a link
+if [ -f "/usr/local/etc/replication_manager.cnf" ] && [ ! -L "/usr/local/etc/replication_manager.cnf" ]; then
     source /usr/local/etc/replication_manager.cnf
 fi
 
@@ -181,9 +184,11 @@ get_slave_status() {
 }
 
 send_email() {
-    Mailer=$(which mail)
-    if [[ ${#EMAIL} -gt 0 && ${#Mailer} -gt 0 ]]; then
-        echo "$1" | $Mailer -s "$2" $EMAIL
+    if [ $SEND_EMAIL > 0 ];then 
+        Mailer=$(which mail)
+        if [[ ${#EMAIL} -gt 0 && ${#Mailer} -gt 0 ]]; then
+            echo "$1" | $Mailer -s "$2" $EMAIL
+        fi
     fi
 }
 find_best_slave_candidate() {

@@ -104,12 +104,16 @@ DEFAULTS_FILE=""
 helptext(){
 cat << EOF
 Command line: Usage: $0 --defaults-file <location of the mysql default files>
-
+    --defaults-file Location of the configuration file
+    --send-email    Should we send an email if we see something not working? Default NO [boolean]
 
 
 EOF
 exit 0
 }
+
+# IF we should send Email or not default Not
+SEND_EMAIL=0
 
 #Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -118,6 +122,10 @@ while [[ $# -gt 0 ]]; do
            DEFAULTS_FILE="$2"
            shift 2
            ;;
+        --send-email)
+            SEND_EMAIL=1
+            shift
+            ;;
         --help)
             helptext
             shift
@@ -149,7 +157,7 @@ fi
 
 if [ -f /tmp/replication_manager.off ]; then
     echo "/tmp/replication_manager.off exists, exiting now"
-    exit
+    exit 1
 fi
 
 #Global variables default values
@@ -158,12 +166,11 @@ FAILED_REPLICATION_TIMEOUT=179  # 3 times the cron interval minus 1s
 # set it to the cluster size if you want to distribute the slave, 0 otherwise
 DISTRIBUTE_REPLICA=3 
 
-MYSQL="`which mysql` ${DEFAULTS_FILE} --connect_timeout=10 -B"
+# IF we should send Email or not default Not
+SEND_EMAIL=0
 
-# local override
-if [ -f "/usr/local/etc/replication_manager.cnf" ]; then
-    source /usr/local/etc/replication_manager.cnf
-fi
+
+MYSQL="`which mysql` ${DEFAULTS_FILE} --connect_timeout=10 -B"
 
 # retrieve the global status and set variables
 get_status_and_variables() {
@@ -220,9 +227,11 @@ get_slave_status() {
 }
 
 send_email() {
-    Mailer=$(which mail)
-    if [[ ${#EMAIL} -gt 0 && ${#Mailer} -gt 0 ]]; then
-        echo "$1" | $Mailer -s "$2" $EMAIL
+    if [ $SEND_EMAIL > 0 ];then 
+        Mailer=$(which mail)
+        if [[ ${#EMAIL} -gt 0 && ${#Mailer} -gt 0 ]]; then
+            echo "$1" | $Mailer -s "$2" $EMAIL
+        fi
     fi
 }
 find_best_slave_candidate() {
