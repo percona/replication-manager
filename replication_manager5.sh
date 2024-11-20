@@ -18,11 +18,10 @@
 #   `host` varchar(40) NOT NULL,
 #   `weight` int(11) NOT NULL DEFAULT 0,
 #   `localIndex` int(11) DEFAULT NULL,
-#   `isReplica` enum('No','Yes','Proposed','Failed') DEFAULT 'No',
+#   `isSlave` enum('No','Yes','Proposed','Failed') DEFAULT 'No',
 #   `lastUpdate` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 #   `lastHeartbeat` timestamp NOT NULL DEFAULT '1970-01-01 00:00:00',
 #   `connectionName` varchar(64) NOT NULL,
-#   `currentSource`   varchar(64),
 #   PRIMARY KEY (`connectionName`,`host`),
 #   KEY idx_host (`host`)
 # ) ENGINE=InnoDB DEFAULT CHARSET=latin1
@@ -100,52 +99,6 @@
 # server-id, same value within a cluster, disctinct across clusters
 #
 #exit
-DEFAULTS_FILE=""
-helptext(){
-cat << EOF
-Command line: Usage: $0 --defaults-file <location of the mysql default files>
-    --defaults-file Location of the configuration file
-    --send-email    Should we send an email if we see something not working? Default NO [boolean]
-
-
-EOF
-exit 0
-}
-
-# IF we should send Email or not default Not
-SEND_EMAIL=0
-
-#Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --defaults-file)
-           DEFAULTS_FILE="$2"
-           shift 2
-           ;;
-        --send-email)
-            SEND_EMAIL=1
-            shift
-            ;;
-        --help)
-            helptext
-            shift
-            ;;                        
-        *)
-            echo "Unknown argument: $1"
-			helptext
-            exit 1
-            ;;
-    esac
-done;
-
-if [ ! "$DEFAULTS_FILE" == "" ]; then
-    if [ ! -f $DEFAULTS_FILE ]; then
-        echo "Default File path is wrong or file does not exists [$DEFAULTS_FILE]. Check correct file location or create file"
-        exit 1
-       else
-        DEFAULTS_FILE=" --defaults-file=$DEFAULTS_FILE "
-    fi
-fi
 
 DEBUG_LOG="/tmp/replication_manager.log"
 if [ "${DEBUG_LOG}" -a -w "${DEBUG_LOG}" -a ! -L "${DEBUG_LOG}" ]; then
@@ -164,17 +117,21 @@ fi
 FAILED_REPLICATION_TIMEOUT=179  # 3 times the cron interval minus 1s
 
 # set it to the cluster size if you want to distribute the slave, 0 otherwise
-DISTRIBUTE_REPLICA=3 
+DISTRIBUTE_SLAVE=3 
 
 # IF we should send Email or not default Not
 SEND_EMAIL=0
 
+MYSQL="`which mysql` --connect_timeout=10 -B"
 
-MYSQL="`which mysql` ${DEFAULTS_FILE} --connect_timeout=10 -B"
+# local override and check that the file is NOT a link
+if [ -f "/usr/local/etc/replication_manager.cnf" ] && [ ! -L "/usr/local/etc/replication_manager.cnf" ]; then
+    source /usr/local/etc/replication_manager.cnf
+fi
 
 # retrieve the global status and set variables
 get_status_and_variables() {
-    eval `$MYSQL -N -e 'show global status;show global variables;' 2> /tmp/mysql_error | tr '\t' '=' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g'     |grep -i -v -e 'wsrep_monitor_status' -e 'telemetry'| sed -e 's/^\([^=]*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
+    eval `$MYSQL -N -e 'show global status;show global variables;' 2> /tmp/mysql_error | tr '\t' '=' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g'     |grep -i -v wsrep_monitor_status| sed -e 's/^\([^=]*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
 
     if [ "$(grep -c ERROR /tmp/mysql_error)" -gt 0 ]; then
         cat /tmp/mysql_error
@@ -191,9 +148,9 @@ slave_connchannel_exists() {
     remoteCluster=$1
     
     if [ "$IS_MARIADB" -eq "1" ]; then
-        cnt=$($MYSQL -N -e 'show all replica status\G' | grep -ci "${wsrep_cluster_name}-${remoteCluster}")
+        cnt=$($MYSQL -N -e 'show all slaves status\G' | grep -ci "${wsrep_cluster_name}-${remoteCluster}")
     else
-        cnt=$($MYSQL -N -e 'show replica status\G' | grep -ci "${wsrep_cluster_name}-${remoteCluster}")
+        cnt=$($MYSQL -N -e 'show slave status\G' | grep -ci "${wsrep_cluster_name}-${remoteCluster}")
     fi
     echo $cnt;
 }
@@ -207,15 +164,15 @@ get_slave_status() {
     cnt=$(slave_connchannel_exists $remoteCluster)
     if [ "$IS_MARIADB" -eq "1" ]; then
         if [ "$cnt" -eq 1 ]; then
-            eval `$MYSQL -e "show replica '${wsrep_cluster_name}-${remoteCluster}' status\G" 2> /tmp/mysql_error | grep -v Last | grep -v '\*\*\*\*' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\s*//g' -e 's/: /=/g' -e 's/\(.*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
+            eval `$MYSQL -e "show slave '${wsrep_cluster_name}-${remoteCluster}' status\G" 2> /tmp/mysql_error | grep -v Last | grep -v '\*\*\*\*' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\s*//g' -e 's/: /=/g' -e 's/\(.*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
         else
-            unset Source_Host
+            unset Master_Host
         fi
     else
         if [ "$cnt" -eq 1 ]; then
-            eval `$MYSQL -e "show replica status for channel '${wsrep_cluster_name}-${remoteCluster}'\G" 2> /tmp/mysql_error | grep -v Last | grep -v '\*\*\*\*' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\s*//g' -e 's/: /=/g' -e 's/\(.*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
+            eval `$MYSQL -e "show slave status for channel '${wsrep_cluster_name}-${remoteCluster}'\G" 2> /tmp/mysql_error | grep -v Last | grep -v '\*\*\*\*' | sed -e ':a' -e 'N' -e '$!ba' -e 's/,\n/, /g' | sed -e 's/^\s*//g' -e 's/: /=/g' -e 's/\(.*\)=\(.*\)$/\1='"'"'\2'"'"'/g'`
         else
-            unset Source_Host
+            unset Master_Host
         fi    
     fi
     
@@ -240,13 +197,13 @@ find_best_slave_candidate() {
     $MYSQL -N -e "
     select r.host 
      from percona.replication r 
-       inner join (select sum(if(isReplica = 'Yes',1,0)) as currentLinks, host 
+       inner join (select sum(if(isSlave = 'Yes',1,0)) as currentLinks, host 
                    from percona.replication rc group by host) as rc 
          on rc.host = r.host 
-     where isReplica != 'Failed' 
+     where isSlave != 'Failed' 
        and connectionName = '${wsrep_cluster_name}-${1}'
        and unix_timestamp(lastHeartbeat) > unix_timestamp() - $FAILED_REPLICATION_TIMEOUT      
-     order by weight desc, localIndex+currentLinks*${DISTRIBUTE_REPLICA} 
+     order by weight desc, localIndex+currentLinks*${DISTRIBUTE_SLAVE} 
      limit 1;"
 }
 
@@ -262,28 +219,28 @@ try_masters() {
         if [ "$IS_MARIADB" -eq "1" ]; then
             
             if [ "$(slave_connchannel_exists $remoteCluster)" -eq "1" ]; then
-                $MYSQL -N -e "stop replica '${wsrep_cluster_name}-${remoteCluster}';"
+                $MYSQL -N -e "stop slave '${wsrep_cluster_name}-${remoteCluster}';"
             fi
             
             $MYSQL -N -e "
-             CHANGE REPLICATION SOURCE TO '${wsrep_cluster_name}-${remoteCluster}' to SOURCE_HOST='$master', 
-              ${REPLICATION_CREDENTIALS}, SOURCE_USE_GTID = slave_pos,
+             change master '${wsrep_cluster_name}-${remoteCluster}' to master_host='$master', 
+              ${REPLICATION_CREDENTIALS}, MASTER_USE_GTID = slave_pos,
               IGNORE_DOMAIN_IDS = (${wsrep_gtid_domain_id});
             set global gtid_slave_pos='${gtid_binlog_pos}';
-            start replica '${wsrep_cluster_name}-${remoteCluster}';"
+            start slave '${wsrep_cluster_name}-${remoteCluster}';"
         else
             if [ "$(slave_connchannel_exists $remoteCluster)" -eq "1" ]; then
-                $MYSQL -N -e "stop replica for channel '${wsrep_cluster_name}-${remoteCluster}';"
+                $MYSQL -N -e "stop slave for channel '${wsrep_cluster_name}-${remoteCluster}';"
             fi
             
             $MYSQL -N -e "
-            CHANGE REPLICATION SOURCE TO SOURCE_HOST='${master}', ${REPLICATION_CREDENTIALS}, SOURCE_AUTO_POSITION = 1 for channel '${wsrep_cluster_name}-${remoteCluster}'; 
-            start replica for channel '${wsrep_cluster_name}-${remoteCluster}';"
+            change master to master_host='${master}', ${REPLICATION_CREDENTIALS}, MASTER_AUTO_POSITION = 1 for channel '${wsrep_cluster_name}-${remoteCluster}'; 
+            start slave for channel '${wsrep_cluster_name}-${remoteCluster}';"
         fi
         sleep 10  # Give some time for replication to settle
         get_slave_status $remoteCluster
-        stateOk=$(echo $Replica_IO_Running | grep -ci connect) # anything with connect in Replica_IO_Running is bad
-        if [[ $Replica_IO_Running == "Yes" && $Replica_SQL_Running == "Yes" && $stateOk -eq 0 ]]; then
+        stateOk=$(echo $Slave_IO_State | grep -ci connect) # anything with connect in Slave_IO_State is bad
+        if [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes" && $stateOk -eq 0 ]]; then
             masterOk=1
             break
         fi
@@ -304,7 +261,7 @@ setup_replication(){
     
     if [ "$CandidateSlave" == "$wsrep_node_name" ]; then
         #we are the best candidate for that connection
-        myState=$($MYSQL -N -e "select isReplica from percona.replication where connectionName = '${wsrep_cluster_name}-${remoteCluster}' and host = '$wsrep_node_name'")
+        myState=$($MYSQL -N -e "select isSlave from percona.replication where connectionName = '${wsrep_cluster_name}-${remoteCluster}' and host = '$wsrep_node_name'")
         
         if [ "$myState" == "Proposed" ]; then
             # We are already at the proposed stated, we can setup replication
@@ -314,20 +271,20 @@ setup_replication(){
                 # all good, let's proclaim we are the slave
                 $MYSQL -e "
                 update percona.replication 
-                 set isReplica='Yes', lastUpdate=now(), lastHeartbeat=now(),currentSource='$Source_Host' 
+                 set isSlave='Yes', lastUpdate=now(), lastHeartbeat=now() 
                  where connectionName =  '${wsrep_cluster_name}-${remoteCluster}' 
                  and host = '$wsrep_node_name'"
               
-                send_email "Node $wsrep_node_name is the new replica for the connectionName '${wsrep_cluster_name}-${remoteCluster}'" "New replica"  
+                send_email "Node $wsrep_node_name is the new slave for the connectionName '${wsrep_cluster_name}-${remoteCluster}'" "New slave"  
             else
                 # this node failed to setup replication
                 $MYSQL -e "
                 update percona.replication 
-                set isReplica='Failed', lastUpdate=now(), lastHeartbeat=now(),currentSource=''  
+                set isSlave='Failed', lastUpdate=now(), lastHeartbeat=now() 
                 where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                   and host = '$wsrep_node_name'"
                 
-                send_email "Node $wsrep_node_name failed to become the new replica for the connectionName '${wsrep_cluster_name}-${remoteCluster}'" "Failed replica"  
+                send_email "Node $wsrep_node_name failed to become the new slave for the connectionName '${wsrep_cluster_name}-${remoteCluster}'" "Failed slave"  
             fi
             
         elif [ "$myState" == "No" ]; then
@@ -342,9 +299,9 @@ setup_replication(){
              select host into @hostproposed 
                from percona.replication 
                where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
-                 and isReplica = 'Proposed' 
+                 and isSlave = 'Proposed' 
                  and unix_timestamp(lastHeartbeat) > unix_timestamp() - $FAILED_REPLICATION_TIMEOUT;
-              update percona.replication set isReplica='Proposed', localIndex=$wsrep_local_index, lastUpdate=now(), lastHeartbeat=now(),currentSource=''  
+              update percona.replication set isSlave='Proposed', localIndex=$wsrep_local_index, lastUpdate=now(), lastHeartbeat=now() 
                 where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                   and host = '$wsrep_node_name' 
                   and host <> coalesce(@hostproposed,' ');
@@ -352,10 +309,10 @@ setup_replication(){
         fi
     else
         # this node is not the best candidate for slave, this will reset status 'Failed' when there is no slave
-        if [ "a$Source_Host" == "a" ]; then   # sanity check
+        if [ "a$Master_Host" == "a" ]; then   # sanity check
             $MYSQL -e "
             update percona.replication 
-             set isReplica='No', localIndex=$wsrep_local_index, lastHeartbeat=now(),currentSource=''  
+             set isSlave='No', localIndex=$wsrep_local_index, lastHeartbeat=now() 
              where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                and host = '$wsrep_node_name'"    
         fi
@@ -365,22 +322,22 @@ setup_replication(){
 # Stop, reset replication and update status 
 # argument: status 
 bail_out() {
-local isReplicaVal
-isReplicaVal=$1
+local isSlaveVal
+isSlaveVal=$1
 
     if [ "$IS_MARIADB" -eq "1" ]; then
         $MYSQL -e "
-        stop replica '${wsrep_cluster_name}-${remoteCluster}'; 
-        reset replica '${wsrep_cluster_name}-${remoteCluster}' all;" 
+        stop slave '${wsrep_cluster_name}-${remoteCluster}'; 
+        reset slave '${wsrep_cluster_name}-${remoteCluster}' all;" 
     else
         $MYSQL -e "
-        stop replica for channel '${wsrep_cluster_name}-${remoteCluster}'; 
-        reset replica all for channel '${wsrep_cluster_name}-${remoteCluster}';"
+        stop slave for channel '${wsrep_cluster_name}-${remoteCluster}'; 
+        reset slave all for channel '${wsrep_cluster_name}-${remoteCluster}';"
     fi
 
     $MYSQL -e "
     update percona.replication 
-     set isReplica='${isReplicaVal}', localIndex=$wsrep_local_index, lastHeartbeat=now(),currentSource='$Source_Host'  
+     set isSlave='${isSlaveVal}', localIndex=$wsrep_local_index, lastHeartbeat=now() 
      where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
      and host = '$wsrep_node_name'" 
 }
@@ -397,12 +354,12 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
     for remoteCluster in $($MYSQL -N -e "select clusterMaster from percona.link where clusterSlave = '$wsrep_cluster_name';"); do
         # this list all the links we need to care about here
         
-        myState=`$MYSQL -N -e "select isReplica from percona.replication where connectionName = '${wsrep_cluster_name}-${remoteCluster}' and host = '$wsrep_node_name';"`
-        slaveDefined=`$MYSQL -N -e "select concat(host,'|', unix_timestamp() - unix_timestamp(lastHeartbeat)) from percona.replication where isReplica='Yes' and connectionName = '${wsrep_cluster_name}-${remoteCluster}' order by localIndex limit 1"`
+        myState=`$MYSQL -N -e "select isSlave from percona.replication where connectionName = '${wsrep_cluster_name}-${remoteCluster}' and host = '$wsrep_node_name';"`
+        slaveDefined=`$MYSQL -N -e "select concat(host,'|', unix_timestamp() - unix_timestamp(lastHeartbeat)) from percona.replication where isSlave='Yes' and connectionName = '${wsrep_cluster_name}-${remoteCluster}' order by localIndex limit 1"`
 
         get_slave_status $remoteCluster
         
-        if [ "a$Source_Host" == "a" ]; then 
+        if [ "a$Master_Host" == "a" ]; then 
             # This node is not currently a slave
             
             if [ "a$myState" == "a" ]; then
@@ -414,14 +371,14 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
                 
                 $MYSQL -e "
                 insert into percona.replication 
-                 (host,weight,connectionName,localIndex,isReplica,lastUpdate,lastHeartbeat) 
+                 (host,weight,connectionName,localIndex,isSlave,lastUpdate,lastHeartbeat) 
                  Values ('$wsrep_node_name','${nodeWeight}','${wsrep_cluster_name}-${remoteCluster}',$wsrep_local_index,'No',now(),now())" 
                 myState=No
             elif [ "$myState" == "Failed" ]; then
                 # Clear the failed state after twice the normal timeout
                 $MYSQL -e "
                 update percona.replication 
-                 set isReplica='No', localIndex=$wsrep_local_index, lastUpdate=now(), lastHeartbeat=now() 
+                 set isSlave='No', localIndex=$wsrep_local_index, lastUpdate=now(), lastHeartbeat=now() 
                  where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                    and host = '$wsrep_node_name' 
                    and unix_timestamp(lastUpdate) < unix_timestamp() - 2*$FAILED_REPLICATION_TIMEOUT"
@@ -439,7 +396,7 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
                     # the current slave is not reporting, 
                     $MYSQL -e "
                     update percona.replication 
-                     set isReplica='No' 
+                     set isSlave='No' 
                      where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                        and host = '$slaveHost'"
                     
@@ -450,7 +407,7 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
                     # Slave is reporting, this is the sane path for a node that isn't the slave
                     $MYSQL -e "
                     update percona.replication 
-                     set isReplica='No', localIndex=$wsrep_local_index, lastHeartbeat=now() 
+                     set isSlave='No', localIndex=$wsrep_local_index, lastHeartbeat=now() 
                      where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                        and host = '$wsrep_node_name'"                
                 fi
@@ -469,7 +426,7 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
                     if [ -z  $nodeWeight ]; then nodeWeight=0;fi
                     
                     $MYSQL -e "
-                    insert into percona.replication (host,weight,connectionName,localIndex,isReplica,lastUpdate,lastHeartbeat) 
+                    insert into percona.replication (host,weight,connectionName,localIndex,isSlave,lastUpdate,lastHeartbeat) 
                     Values ('$wsrep_node_name','$nodeWeight','${wsrep_cluster_name}-${remoteCluster}',$wsrep_local_index,'Yes',now(),now())" 
                 else
                     # That could be problematic, another slave exists let's bail-out
@@ -477,23 +434,23 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
                 fi
             elif [ "$myState" == "Yes" ]; then
                 # myState is defined
-                if [[ $Replica_IO_Running == "Yes" && $Replica_SQL_Running == "Yes" ]]; then
+                if [[ $Slave_IO_Running == "Yes" && $Slave_SQL_Running == "Yes" ]]; then
                     #replication is going ok, the sane path when the node is a slave
                     $MYSQL -e "
                     update percona.replication 
-                     set isReplica='Yes', localIndex=$wsrep_local_index, lastHeartbeat=now(),currentSource='$Source_Host' 
+                     set isSlave='Yes', localIndex=$wsrep_local_index, lastHeartbeat=now() 
                      where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                      and host = '$wsrep_node_name'"    
             
                 else
                     #replication is broken
-                    if [ "$Replica_SQL_Running" == "No" ]; then
+                    if [ "$Slave_SQL_Running" == "No" ]; then
                         # That's bad, replication failed, let's bailout
                         bail_out Failed
                         
-                        send_email "Node $wsrep_node_name failed as a replica for the connectionName '${wsrep_cluster_name}-${remoteCluster}', SQL thread not running" "Failed replica"  
+                        send_email "Node $wsrep_node_name failed as a slave for the connectionName '${wsrep_cluster_name}-${remoteCluster}', SQL thread not running" "Failed slave"  
                         
-                    elif [[ $Replica_IO_Running != "Yes" && $Replica_SQL_Running == "Yes" ]]; then
+                    elif [[ $Slave_IO_Running != "Yes" && $Slave_SQL_Running == "Yes" ]]; then
                         # Looks like we cannot reach the master, let's try to reconnect
                         
                         masterOk=$(try_masters $remoteCluster)
@@ -501,38 +458,38 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
                             # we succeeded reconnecting
                             $MYSQL -e "
                             update percona.replication 
-                             set isReplica='Yes', localIndex=$wsrep_local_index, lastHeartbeat=now(),currentSource='$Source_Host' 
+                             set isSlave='Yes', localIndex=$wsrep_local_index, lastHeartbeat=now() 
                              where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                                and host = '$wsrep_node_name'"         
                         else
                             # We failed, bailing-out
                             bail_out Failed
-                            send_email "Node $wsrep_node_name failed as a replica for the cluster $wsrep_cluster_name, IO thread not running" "Failed replica"
+                            send_email "Node $wsrep_node_name failed as a slave for the cluster $wsrep_cluster_name, IO thread not running" "Failed slave"
                         fi
                     fi
                 fi
                 
                 # Sanity check, is there more than one slave reporting for the connection?
-                slaveCount=$($MYSQL -BN -e "select count(*) from percona.replication where isReplica = 'Yes' and connectionName = '${wsrep_cluster_name}-${remoteCluster}' and unix_timestamp(lastHeartbeat) > unix_timestamp() - $FAILED_REPLICATION_TIMEOUT")
+                slaveCount=$($MYSQL -BN -e "select count(*) from percona.replication where isSlave = 'Yes' and connectionName = '${wsrep_cluster_name}-${remoteCluster}' and unix_timestamp(lastHeartbeat) > unix_timestamp() - $FAILED_REPLICATION_TIMEOUT")
                 if [ "$slaveCount" -gt 1 ]; then
-                    # that's bad, more than one replica for the cluster... bailout
+                    # that's bad, more than one slave for the cluster... bailout
                     bail_out No
                     
-                    send_email "Two nodes were replicas for the cluster $wsrep_cluster_name, stopping replica on node $wsrep_node_name" "Two replicas"
+                    send_email "Two nodes were slaves for the cluster $wsrep_cluster_name, stopping slave on node $wsrep_node_name" "Two slaves"
                     
                 fi
                 
             elif [ "$myState" == "No" ]; then
-                # We are not defined as a replica in the cluster but we are... bailout
+                # We are not defined as a slave in the cluster but we are... bailout
                 bail_out No
             elif [ "$myState" == "Failed" ]; then
-                # We have failed and we are a replica, this is abnormal, fix state to 'No' and bailout
+                # We have failed and we are a slave, this is abnormal, fix state to 'No' and bailout
                 bail_out No
             elif [ "$myState" == "Proposed" ]; then
-                # Sanity cleanup, if the node is a replica is still at Proposed, need to be updated
+                # Sanity cleanup, if the node is a slave is still at Proposed, need to be updated
                 $MYSQL -e "
                 update percona.replication 
-                set isReplica='Yes', localIndex=$wsrep_local_index, lastHeartbeat=now() 
+                set isSlave='Yes', localIndex=$wsrep_local_index, lastHeartbeat=now() 
                 where connectionName = '${wsrep_cluster_name}-${remoteCluster}' 
                   and host = '$wsrep_node_name'"  
             fi
@@ -541,10 +498,10 @@ if [[ $wsrep_cluster_status == 'Primary' && ( $wsrep_local_state -eq 4 \
 else
     # cluster node is not sane for this node
 
-    if [ "a$Source_Host" != "a" ]; then 
-        # This node is currently a replica but not in the primary group, bailing out
+    if [ "a$Master_Host" != "a" ]; then 
+        # This node is currently a slave but not in the primary group, bailing out
         bail_out No
-        send_email "Node $wsrep_node_name is not longer part of the cluster $wsrep_cluster_name, stopping replication" "Failed replica"
+        send_email "Node $wsrep_node_name is not longer part of the cluster $wsrep_cluster_name, stopping replication" "Failed slave"
     fi
 
     # Nothing else to do
