@@ -171,6 +171,11 @@ install_deps() {
         yum -y install wget
         yum clean all
         RHEL=$(rpm --eval %rhel)
+        if [ "x${RHEL}" = "x10" ]; then
+            dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+        else
+            yum -y install epel-release
+        fi
         INSTALL_LIST="git rpm-build rpmdevtools wget rpmlint"
         yum -y install ${INSTALL_LIST}
     else
