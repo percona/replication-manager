@@ -268,7 +268,7 @@ try_masters() {
             $MYSQL -N -e "
              CHANGE REPLICATION SOURCE TO '${wsrep_cluster_name}-${remoteCluster}' to SOURCE_HOST='$master', 
               ${REPLICATION_CREDENTIALS}, SOURCE_USE_GTID = slave_pos,
-              IGNORE_DOMAIN_IDS = (${wsrep_gtid_domain_id});
+              IGNORE_DOMAIN_IDS = (${wsrep_gtid_domain_id}), Get_Source_public_key=1;
             set global gtid_slave_pos='${gtid_binlog_pos}';
             start replica '${wsrep_cluster_name}-${remoteCluster}';"
         else
@@ -277,7 +277,7 @@ try_masters() {
             fi
             
             $MYSQL -N -e "
-            CHANGE REPLICATION SOURCE TO SOURCE_HOST='${master}', ${REPLICATION_CREDENTIALS}, SOURCE_AUTO_POSITION = 1 for channel '${wsrep_cluster_name}-${remoteCluster}'; 
+            CHANGE REPLICATION SOURCE TO SOURCE_HOST='${master}', ${REPLICATION_CREDENTIALS}, SOURCE_AUTO_POSITION = 1 for channel '${wsrep_cluster_name}-${remoteCluster}', Get_Source_public_key=1; 
             start replica for channel '${wsrep_cluster_name}-${remoteCluster}';"
         fi
         sleep 10  # Give some time for replication to settle
