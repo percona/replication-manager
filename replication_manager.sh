@@ -277,7 +277,7 @@ try_masters() {
             fi
             
             $MYSQL -N -e "
-            CHANGE REPLICATION SOURCE TO SOURCE_HOST='${master}', ${REPLICATION_CREDENTIALS}, SOURCE_AUTO_POSITION = 1 for channel '${wsrep_cluster_name}-${remoteCluster}', Get_Source_public_key=1; 
+            CHANGE REPLICATION SOURCE TO SOURCE_HOST='${master}', ${REPLICATION_CREDENTIALS}, SOURCE_AUTO_POSITION = 1, Get_Source_public_key=1 for channel '${wsrep_cluster_name}-${remoteCluster}'; 
             start replica for channel '${wsrep_cluster_name}-${remoteCluster}';"
         fi
         sleep 10  # Give some time for replication to settle
