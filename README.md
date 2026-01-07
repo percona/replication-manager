@@ -272,7 +272,7 @@ The replication state should be unchanged and the *percona.replication* table sh
 
     mysql> select * from percona.replication;
     +-------+--------+------------+---------+---------------------+---------------------+----------------+
-    | host  | weight | localIndex | isSlave | lastUpdate          | lastHeartbeat       | connectionName |
+    | host  | weight | localIndex | isReplica | lastUpdate          | lastHeartbeat       | connectionName |
     +-------+------- +------------+---------+---------------------+---------------------+----------------+
     | DC1-1 |      10|          1 | Yes     | 2017-06-30 13:03:01 | 2017-06-30 13:03:01 | DC1-DC2        |
     | DC1-1 |      11|          1 | Yes     | 2017-06-30 13:03:01 | 2017-06-30 13:03:01 | DC1-DC3        |
@@ -285,11 +285,11 @@ That is the sane behavior.  If you don't get this, go to the *Debugging* section
 
     * * * * * /usr/local/bin/replication_manager.sh 
 
-Let a least one minute pass then proceed with the other nodes.  You can try a manual run first, see if the script added a line to the replication table for the host, likely with isSlave = No, and then add the cron jobs.  In my test setup, the end result is:
+Let a least one minute pass then proceed with the other nodes.  You can try a manual run first, see if the script added a line to the replication table for the host, likely with isReplica = No, and then add the cron jobs.  In my test setup, the end result is:
 
     mysql> select * from percona.replication;
     +-------+--------+------------+---------+---------------------+---------------------+----------------+
-    | host  | weight | localIndex | isSlave | lastUpdate          | lastHeartbeat       | connectionName |
+    | host  | weight | localIndex | isReplica | lastUpdate          | lastHeartbeat       | connectionName |
     +-------+------- +------------+---------+---------------------+---------------------+----------------+
     | DC1-1 |      10|          1 | Yes     | 2017-06-30 13:13:01 | 2017-06-30 13:13:01 | DC1-DC2        |
     | DC1-2 |      11|          2 | No      | 2017-06-30 13:13:01 | 2017-06-30 13:13:01 | DC1-DC2        |
