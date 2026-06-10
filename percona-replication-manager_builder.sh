@@ -180,7 +180,11 @@ install_deps() {
         else
             yum -y install epel-release
         fi
-        INSTALL_LIST="git rpm-build rpmdevtools wget rpmlint"
+        if [ "x${RHEL}" = "x10" ]; then
+            INSTALL_LIST="git rpm-build rpmdevtools wget"
+        else
+            INSTALL_LIST="git rpm-build rpmdevtools wget rpmlint"
+        fi
         yum -y install ${INSTALL_LIST}
     else
         export DEBIAN=$(lsb_release -sc)
