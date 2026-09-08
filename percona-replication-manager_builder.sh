@@ -187,6 +187,15 @@ install_deps() {
         fi
         yum -y install ${INSTALL_LIST}
     else
+        export OS_NAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+        if [ "${OS_NAME}" == "bullseye" ]; then
+           sed -i -E '/bullseye(-security|-updates)?[[:space:]]/d' /etc/apt/sources.list
+cat <<'EOF' | sudo tee -a /etc/apt/sources.list
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260830T000000Z/ bullseye main
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260830T000000Z/ bullseye-updates main
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260830T000000Z/ bullseye-security main
+EOF
+        fi
         export DEBIAN=$(lsb_release -sc)
         export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         apt-get update || true
@@ -354,9 +363,11 @@ build_source_deb(){
     cp *_source.changes $WORKDIR/source_deb
     cp *.dsc $WORKDIR/source_deb
     cp *.orig.tar.gz $WORKDIR/source_deb
+    cp *.diff.gz $WORKDIR/source_deb
     cp *_source.changes $CURDIR/source_deb
     cp *.dsc $CURDIR/source_deb
     cp *.orig.tar.gz $CURDIR/source_deb
+    cp *.diff.gz $CURDIR/source_deb
 }
 
 build_deb(){
